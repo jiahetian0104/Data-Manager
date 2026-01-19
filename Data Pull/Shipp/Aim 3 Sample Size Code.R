@@ -72,10 +72,52 @@ march_ifp <- read.csv(
   "Z:/ECHO/CHARM/Data/ECHO 1/RedCap/MARCH/20231202190220_42_ess_chb_ifp.csv"
 )
 
+# ---- Infant Feeding Practices (IW, Phase 2 – current) 
+ifp_iw_phase2 <- read.csv(
+  "Z:/ECHO/CHARM/Data/ECHO 1/SR0 Data/ECHOsftp_final_20230918/ECHOsftp/Phase_2/Phase2_3month_Data_Delivery/IW/echo3mo_data_all_extra_MixedFormats.csv"
+)
 
-# feed variable
-# MILKFEED_MONTH
-# MTHR_BRST_FEED_ECHO
+# ---- Infant Feeding Practices (Prior IW – older instrument) 
+ifp_iw_prior <- read.csv(
+  "Z:/ECHO/CHARM/Data/ECHO 1/SR0 Data/ECHOsftp_final_20230918/ECHOsftp/Phase_2/Phase2_3month_Data_Delivery/Prior_IW_Data_Older_Instrument/echo3mo_data_all_extra_mixedformats_03012023.csv"
+)
+
+# ---- 1) Keep only SAMPLEID + BRST_MILK and stack
+ifp_breastmilk <- bind_rows(
+  ifp_iw_phase2 %>%
+    select(SAMPLEID, BRST_MILK) %>%
+    mutate(source = "phase2"),
+  
+  ifp_iw_prior %>%
+    select(SAMPLEID, BRST_MILK) %>%
+    mutate(source = "prior")
+) %>%
+  mutate(
+    SAMPLEID = as.character(SAMPLEID),
+    SAMPLEID = str_trim(SAMPLEID)
+  ) %>%
+  filter(!is.na(SAMPLEID), SAMPLEID != "")
+
+# ---- 2) Map SAMPLEID (ChildID) -> MomID using global_crosswalk_p2
+ifp_breastmilk_mom <- ifp_breastmilk %>%
+  rename(ChildID = SAMPLEID) %>%
+  left_join(
+    global_crosswalk_p2,
+    by = "ChildID"
+  )
+
+# ---- 3) Extract unique MomIDs with BRST_MILK available (optional filter)
+ifp_breastmilk_mom_ids <- ifp_breastmilk_mom %>%
+  filter(!is.na(MomID), MomID != "") %>%
+  distinct(MomID) %>%
+  pull(MomID)
+
+
+# ---- 4) Overlap with march_diet_ids
+march_diet_ifp_ids <- intersect(ifp_breastmilk_mom_ids, march_diet_ids) # 736
+
+
+# 3. Complimentary Feeding History ----------------------------------------
 
 get_overlap_n <- function(
     df,
@@ -156,19 +198,8 @@ get_overlap_list <- function(
   
 }
 
-get_overlap_n(
-  df = march_ifp,
-  diet_biomarker_ids = march_diet_ids,
-  crosswalk_df = global_crosswalk_p
-)
 
-march_diet_ifp_ids <- get_overlap_list(
-  df = march_ifp,
-  diet_biomarker_ids = march_diet_ids,
-  crosswalk_df = global_crosswalk_p
-)
 
-# 3. Complimentary Feeding History ----------------------------------------
 march_cfh <- read.csv(
 "Z:/ECHO/CHARM/Data/ECHO 1/RedCap/MARCH/20231202190220_42_ess_chb_cfh.csv"
 )
