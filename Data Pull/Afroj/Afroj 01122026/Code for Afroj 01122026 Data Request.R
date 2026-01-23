@@ -69,6 +69,9 @@ birth_certificate <- read.csv("ECHO 1/MDHHS Data/Birth_Certificate/MARCH_BC_Fina
 # Prenatal 1 Data
 prenatal1 <- read.csv("ECHO 1/SR0 Data/ECHOsftp_final_20230918/ECHOsftp/Phase_1/Data_Delivery/Prenatal_Survey1/PRENATAL_1_SURVEY_mixedformats.csv")
 
+# Prenatal 2 Data
+prenatal2 <- read.csv("ECHO 1/SR0 Data/ECHOsftp_final_20230918/ECHOsftp/Phase_1/Data_Delivery/Prenatal_Survey2/PRENATAL_2_SURVEY_mixedformats.csv")
+
 # 3 Month Data
 postnatal_3month_IW <- read.csv("ECHO 1/SR0 Data/ECHOsftp_final_20230918/ECHOsftp/Phase_2/Phase2_3month_Data_Delivery/IW/echo3mo_data_all_extra_MixedFormats.csv")
 
@@ -187,9 +190,20 @@ prenatal1_prep <- prep_requested_vars_by_visit(
 
 prenatal1_selected_df <- prenatal1_prep$selected
 
+prenatal2_prep <- prep_requested_vars_by_visit(
+  variables_df = variables,
+  dataset = prenatal2,
+  visit_value = "Prenatal 2",  
+  id_vars = c("SAMPLEID"),
+  rename_ids = c(mom_id = "SAMPLEID"),
+  verbose = TRUE
+)
+
+prenatal2_selected_df <- prenatal2_prep$selected
+
 postnatal_3month_IW_prep <- prep_requested_vars_by_visit(
   variables_df = variables,
-  dataset = prenatal_3month_IW,
+  dataset = postnatal_3month_IW,
   visit_value = "3 Month",  
   id_vars = c("SAMPLEID"),
   rename_ids = c(child_id = "SAMPLEID"),
@@ -200,7 +214,7 @@ postnatal_3month_IW_selected_df <- postnatal_3month_IW_prep$selected
 
 postnatal_3month_prior_IW_prep <- prep_requested_vars_by_visit(
   variables_df = variables,
-  dataset = prenatal_3month_prior_IW,
+  dataset = postnatal_3month_prior_IW,
   visit_value = "3 Month",  
   id_vars = c("SAMPLEID"),
   rename_ids = c(child_id = "SAMPLEID"),
@@ -301,25 +315,28 @@ final_merged <- crosswalk_mothers %>%
   # Step 3: Prenatal 1, mom level
   left_join(prenatal1_selected_df, by = "mom_id") %>%
   
-  # Step 4: Postnatal 3 month（mother level）
+  # Step 4: Prenatal 2, mom level
+  left_join(prenatal2_selected_df, by = "mom_id") %>%
+  
+  # Step 5: Postnatal 3 month（mother level）
   left_join(postnatal_3month_selected_df, by = "child_id") %>%
   
-  # Step 5: Mother_Race, mother level
+  # Step 6: Mother_Race, mother level
   left_join(mom_race_select, by = "mom_id") %>%
   
-  # Step 6: Maternal age at birth, mother level
+  # Step 7: Maternal age at birth, mother level
   left_join(maternal_age_select, by = "mom_id") %>%
   
-  # Step 7: Final income, mother-child level）
+  # Step 8: Final income, mother-child level）
   left_join(income_select, by = c("mom_id", "child_id")) %>%
   
-  # Step 8: UR2KX, mother-child level）
+  # Step 9: UR2KX, mother-child level）
   left_join(urban_select, by = c("mom_id", "child_id")) %>%
   
-  # Step 9: GA_Birth, mother-child level）
+  # Step 10: GA_Birth, mother-child level）
   left_join(lmp_ga_selected, by = c("mom_id", "child_id")) %>%
   
-  # Step 10: Dietary Score, mother level）
+  # Step 11: Dietary Score, mother level）
   left_join(dietary, by = "mom_id")
 
 
@@ -357,12 +374,13 @@ writeData(wb, "Data", final_merged, na.string = "NA")
 
 # Add notes sheet
 notes <- c(
-  "1. This dataset was prepared on January 26, 2026 by Jiahe Tian.",
+  "1. This dataset was prepared on January 27, 2026 by Jiahe Tian.",
   "2. MOMZIP is not included because it was used internally to derive the urban–rural classification. Please refer to UR2KX for urban–rural status (U = Urban, R = Rural).",
   "3. UR2KX is a derived variable indicating urban–rural classification based on residential information.",
   "4. MOMSMOKE reflects prenatal smoking status during pregnancy only. For smoking status before and during pregnancy, please refer to CIGARETTE_SMOKING, SMOK_NUM, and SMOK_PREGNUM.",
   "5. FRUIT and GREENSALAD variables are not included. Dietary Scores are provided to harmonize dietary intake information.",
-  "6. Blank cells in the dataset indicate missing values (NA)."
+  "6. SLEEP_QUALITY and SLEEP_QUALITY2 are both included to reflect sleep quality during early and late pregnancy.",
+  "7. Blank cells in the dataset indicate missing values (NA)."
 )
 
 addWorksheet(wb, "Notes")
