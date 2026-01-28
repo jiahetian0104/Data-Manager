@@ -10,62 +10,58 @@ library(janitor)
 crosswalk_path <- "Z:/ECHO/CHARM/Data/Miscellaneous/Global Crosswalk/global_crosswalk.xlsx"
 global_crosswalk <- read_excel(crosswalk_path, sheet = 1)
 
-# Prepare global crosswalk specimen dataframe
-global_crosswalk_specimen <- global_crosswalk %>%
+# MomIDs to Child_ECHO_ID mapping
+global_crosswalk_p1 <- global_crosswalk %>%
   mutate(
-    SpecimenID = Specimen_ID %>%
-      as.character() %>%
-      str_trim() %>%
-      str_pad(width = 4, side = "left", pad = "0")
-  ) %>%
-  select(SpecimenID, MomID)
-
-global_crosswalk_p <- global_crosswalk %>%
-  mutate(
-    Mom_ECHO_ID   = str_trim(as.character(Mom_ECHO_ID)),
     Child_ECHO_ID = str_trim(as.character(Child_ECHO_ID)),
+    ChildID = str_trim(as.character(ChildID)),
     MomID         = str_trim(as.character(MomID))
   ) %>%
-  select(Mom_ECHO_ID, Child_ECHO_ID, MomID) %>%
+  select(Child_ECHO_ID, ChildID, MomID) %>%
   distinct()
 
-global_crosswalk_p2 <- global_crosswalk %>%
-  mutate(
-    ChildID = str_trim(as.character(ChildID)),
-    MomID   = str_trim(as.character(MomID))
-  ) %>%
-  select(ChildID, MomID) %>%
-  distinct()
 
 # 1. Diet Data ------------------------------------------------------------
 
 # Read ARCH diet dataset
 arch_dietdata <- read_excel("Z:/ECHO/CHARM/Data/ECHO 1/ARCH Enrollment Data/Diet.xlsx")
 
-# Count unique participants based on sampleid, n = 409
-arch_diet_ids <- arch_dietdata %>%
+arch_dietdata <- arch_dietdata %>%
   mutate(
     SUBJECT_Id = as.character(SUBJECT_Id),
     SUBJECT_Id = str_trim(SUBJECT_Id)
   ) %>%
-  filter(!is.na(SUBJECT_Id), SUBJECT_Id != "") %>%
-  distinct(SUBJECT_Id) %>%
-  pull(SUBJECT_Id)
+  left_join(
+    global_crosswalk_p1,
+    by = c("SUBJECT_Id" = "MomID")
+  )
 
+arch_diet_ids <- arch_dietdata %>%
+  mutate(
+    Child_ECHO_ID = as.character(Child_ECHO_ID),
+    Child_ECHO_ID = str_trim(Child_ECHO_ID)
+  ) %>%
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
 # Read Prenatal Diet dataset
 march_dietdata <- read_excel("Z:/ECHO/CHARM/Data/Code Derived/PN Dietary/PhenX and DSQ scores combined.xlsx")
 
-# Count unique participants based on sampleid, n = 1027
+march_dietdata <- march_dietdata %>%
+  left_join(
+    global_crosswalk_p1,
+    by = c("SAMPLEID" = "MomID")
+  )
+
 march_diet_ids <- march_dietdata %>%
   mutate(
-    SAMPLEID = as.character(SAMPLEID),
-    SAMPLEID = str_trim(SAMPLEID)
+    Child_ECHO_ID = as.character(Child_ECHO_ID),
+    Child_ECHO_ID = str_trim(Child_ECHO_ID)
   ) %>%
-  filter(!is.na(SAMPLEID), SAMPLEID != "") %>%
-  distinct(SAMPLEID) %>%
-  pull(SAMPLEID)
-
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
 # 2. Infant Feeding Practice ----------------------------------------------
 march_ifp <- read.csv(
@@ -96,106 +92,68 @@ ifp_breastmilk <- bind_rows(
     SAMPLEID = as.character(SAMPLEID),
     SAMPLEID = str_trim(SAMPLEID)
   ) %>%
-  filter(!is.na(SAMPLEID), SAMPLEID != "")
+  filter(!is.na(SAMPLEID), SAMPLEID != "") %>%
+  left_join(global_crosswalk_p1, by = c("SAMPLEID" = "ChildID")) %>% 
+  filter(Child_ECHO_ID != "NA", !is.na(Child_ECHO_ID))
 
-# ---- 2) Map SAMPLEID (ChildID) -> MomID using global_crosswalk_p2
-ifp_breastmilk_mom <- ifp_breastmilk %>%
-  rename(ChildID = SAMPLEID) %>%
-  left_join(
-    global_crosswalk_p2,
-    by = "ChildID"
-  )
 
 # ---- 3) Extract unique MomIDs with BRST_MILK available (optional filter)
-ifp_breastmilk_mom_ids <- ifp_breastmilk_mom %>%
-  filter(!is.na(MomID), MomID != "") %>%
-  distinct(MomID) %>%
-  pull(MomID)
+ifp_breastmilk_child_echo_ids <- ifp_breastmilk %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
 
 # ---- 4) Overlap with march_diet_ids
-march_diet_ifp_ids <- intersect(ifp_breastmilk_mom_ids, march_diet_ids) # 736
+march_diet_ifp_ids <- intersect(ifp_breastmilk_child_echo_ids, march_diet_ids) # 736
 
+length(march_diet_ifp_ids)
 
 # 3. Complimentary Feeding History ----------------------------------------
 
 get_overlap_n <- function(
     df,
-    diet_biomarker_ids,
-    crosswalk_df
+    diet_biomarker_ids
 ) {
   
-  # 1. Extract unique Child_ECHO_IDs
-  child_ids <- df %>%
+  # 1. Extract unique Child_ECHO_IDs directly from participantid
+  child_echo_ids <- df %>%
     mutate(
-      participantid = as.character(participantid),
-      participantid = str_trim(participantid)
-    ) %>%
-    filter(!is.na(participantid), participantid != "") %>%
-    distinct(participantid) %>%
-    pull(participantid)
-  
-  # 2. Map Child_ECHO_ID -> MomID
-  child_mom <- tibble(
-    Child_ECHO_ID = child_ids
-  ) %>%
-    mutate(
-      Child_ECHO_ID = as.character(Child_ECHO_ID),
+      Child_ECHO_ID = as.character(participantid),
       Child_ECHO_ID = str_trim(Child_ECHO_ID)
     ) %>%
-    left_join(
-      crosswalk_df,
-      by = "Child_ECHO_ID"
-    )
+    filter(
+      !is.na(Child_ECHO_ID),
+      Child_ECHO_ID != "",
+      Child_ECHO_ID != "NA"
+    ) %>%
+    distinct(Child_ECHO_ID) %>%
+    pull(Child_ECHO_ID)
   
-  # 3. Extract unique MomIDs
-  mom_ids <- child_mom %>%
-    filter(!is.na(MomID)) %>%
-    distinct(MomID) %>%
-    pull(MomID)
-  
-  # 4. Return overlap sample size only
-  print(length(intersect(mom_ids, diet_biomarker_ids)))
+  # 2. Return overlap sample size (Child-level)
+  print(length(intersect(child_echo_ids, diet_biomarker_ids)))
 }
 
 get_overlap_list <- function(
     df,
-    diet_biomarker_ids,
-    crosswalk_df
+    diet_biomarker_ids
 ) {
   
-  # 1. Extract unique Child_ECHO_IDs
-  child_ids <- df %>%
+  # 1. Extract unique Child_ECHO_IDs directly from participantid
+  child_echo_ids <- df %>%
     mutate(
-      participantid = as.character(participantid),
-      participantid = str_trim(participantid)
-    ) %>%
-    filter(!is.na(participantid), participantid != "") %>%
-    distinct(participantid) %>%
-    pull(participantid)
-  
-  # 2. Map Child_ECHO_ID -> MomID
-  child_mom <- tibble(
-    Child_ECHO_ID = child_ids
-  ) %>%
-    mutate(
-      Child_ECHO_ID = as.character(Child_ECHO_ID),
+      Child_ECHO_ID = as.character(participantid),
       Child_ECHO_ID = str_trim(Child_ECHO_ID)
     ) %>%
-    left_join(
-      crosswalk_df,
-      by = "Child_ECHO_ID"
-    )
+    filter(
+      !is.na(Child_ECHO_ID),
+      Child_ECHO_ID != "",
+      Child_ECHO_ID != "NA"
+    ) %>%
+    distinct(Child_ECHO_ID) %>%
+    pull(Child_ECHO_ID)
   
-  # 3. Extract unique MomIDs
-  mom_ids <- child_mom %>%
-    filter(!is.na(MomID)) %>%
-    distinct(MomID) %>%
-    pull(MomID)
-  
-  # 4. Return overlap sample size only
-  return(intersect(mom_ids, diet_biomarker_ids))
-  
+  # 2. Return overlap sample size (Child-level)
+  return(intersect(child_echo_ids, diet_biomarker_ids))
 }
 
 
@@ -206,18 +164,17 @@ march_cfh <- read.csv(
 
 get_overlap_n(
   df = march_cfh,
-  diet_biomarker_ids = march_diet_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_ids
 )
 
 march_diet_cfh_ids <- get_overlap_list(
   df = march_cfh,
-  diet_biomarker_ids = march_diet_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_ids
 )
 # 4. Block ----------------------------------------------------------------
 
 # ---- ECHO 1: Derived Forms (BLOCK) 
+# 12901 for ARCH, 12902 for MARCH
 block_12901_block1 <- read.csv(
   "Z:/ECHO/CHARM/Data/ECHO 1/Derived Forms/Cohort_12901/forms_Ess_CHB_BLOCK.csv"
 )
@@ -240,91 +197,44 @@ block_echo2_block2 <- read.csv(
 )
 
 
-# ---- helper: map child ID column -> MomID using global_crosswalk_p 
-add_momid_by_child_echo_id <- function(df, child_id_col, crosswalk_df) {
-  
-  df %>%
-    mutate(
-      child_id_std = .data[[child_id_col]] %>%
-        as.character() %>%
-        str_trim()
-    ) %>%
-    rename(Child_ECHO_ID = child_id_std) %>%
-    left_join(
-      crosswalk_df,
-      by = "Child_ECHO_ID"
-    )
-}
-
-# ---- ECHO1: ParticipantID -> Child_ECHO_ID -> MomID 
-block_12901_block1_mom <- add_momid_by_child_echo_id(
-  df = block_12901_block1,
-  child_id_col = "ParticipantID",
-  crosswalk_df = global_crosswalk_p
-)
-
-block_12902_block1_mom <- add_momid_by_child_echo_id(
-  df = block_12902_block1,
-  child_id_col = "ParticipantID",
-  crosswalk_df = global_crosswalk_p
-)
-
-block_12901_block2_mom <- add_momid_by_child_echo_id(
-  df = block_12901_block2,
-  child_id_col = "ParticipantID",
-  crosswalk_df = global_crosswalk_p
-)
-
-# ---- ECHO2: DWIndividualID -> Child_ECHO_ID -> MomID  
-block_echo2_block1_mom <- add_momid_by_child_echo_id(
-  df = block_echo2_block1,
-  child_id_col = "DWIndividualID",
-  crosswalk_df = global_crosswalk_p
-)
-
-block_echo2_block2_mom <- add_momid_by_child_echo_id(
-  df = block_echo2_block2,
-  child_id_col = "DWIndividualID",
-  crosswalk_df = global_crosswalk_p
-)
-
 
 # ---- ARCH BLOCK: from block_12901_block1_mom  
-arch_block_ids <- block_12901_block1_mom %>%
+arch_block_ids <- block_12901_block1 %>%
   mutate(
-    MomID = as.character(MomID),
-    MomID = str_trim(MomID)
+    ParticipantID = as.character(ParticipantID),
+    ParticipantID = str_trim(ParticipantID)
   ) %>%
-  filter(!is.na(MomID), MomID != "") %>%
-  distinct(MomID) %>%
-  pull(MomID)
-
+  filter(!is.na(ParticipantID), ParticipantID != "") %>%
+  distinct(ParticipantID) %>%
+  pull(ParticipantID)
 
 
 # ---- MARCH BLOCK: union of block_12902_block1_mom and block_echo2_block1_mom  
-march_block_ids_1 <- block_12902_block1_mom %>%
+march_block_ids_1 <- block_12902_block1 %>%
   mutate(
-    MomID = as.character(MomID),
-    MomID = str_trim(MomID)
+    ParticipantID = as.character(ParticipantID),
+    ParticipantID = str_trim(ParticipantID)
   ) %>%
-  filter(!is.na(MomID), MomID != "") %>%
-  distinct(MomID) %>%
-  pull(MomID)
+  filter(!is.na(ParticipantID), ParticipantID != "") %>%
+  distinct(ParticipantID) %>%
+  pull(ParticipantID)
 
-march_block_ids_2 <- block_echo2_block1_mom %>%
+march_block_ids_2 <- block_echo2_block1 %>%
   mutate(
-    MomID = as.character(MomID),
-    MomID = str_trim(MomID)
+    ParticipantID = as.character(ParticipantID),
+    ParticipantID = str_trim(ParticipantID)
   ) %>%
-  filter(!is.na(MomID), MomID != "") %>%
-  distinct(MomID) %>%
-  pull(MomID)
+  filter(!is.na(ParticipantID), ParticipantID != "") %>%
+  distinct(ParticipantID) %>%
+  pull(ParticipantID)
 
 march_block_ids <- union(march_block_ids_1, march_block_ids_2)
 
-arch_diet_block_ids <- intersect(arch_block_ids, arch_diet_ids) # 81
-march_diet_block_ids <- intersect(march_block_ids, march_diet_ids) # 104
+arch_diet_block_ids <- intersect(arch_block_ids, arch_diet_ids) # 82
+length(arch_diet_block_ids)
 
+march_diet_block_ids <- intersect(march_block_ids, march_diet_ids) # 107
+length(march_diet_block_ids)
 
 # 5. Childhood Outcome ----------------------------------------------------
 
@@ -348,9 +258,54 @@ march_diet_any_ids <- Reduce(
 
 ### 5.1.1 ARCH NIH Toolbox --------------------------------------------------
 
+# ARCH RAIND NIH Toolbox
+arch_ntb_raind <- read_excel(
+  "Z:/ECHO/CHARM/Data/NIH Toolbox Participants/ARCH RAIND Child Development Data 5.23.16 FINAL.xlsx",
+  sheet = 2,
+  range = cell_cols("A:B")
+)
+
+
+# Prepare ARCH RAIND NIH Toolbox IDs
+arch_ntb_raind_fixed <- arch_ntb_raind %>%
+  mutate(
+    # ---- 1. MotherID as character (keep leading zeros for child construction) ----
+    MotherID_chr = MotherID %>%
+      as.character() %>%
+      str_pad(width = 4, side = "left", pad = "0"),
+    
+    # ---- 2. Construct correct MomID (remove leading zeros) ----
+    MomID = MotherID_chr %>%
+      str_remove("^0+") %>%
+      if_else(. == "", "0", .),   # safety for "0000"
+    
+    # ---- 3. Construct correct ChildID ----
+    ChildID_correct = case_when(
+      str_ends(ChildID, "_A") ~ paste0("7", MotherID_chr),
+      str_ends(ChildID, "_B") ~ paste0("8", MotherID_chr),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  left_join(
+    global_crosswalk_p1,
+    by = c("ChildID_correct" = "ChildID", "MomID" = "MomID")
+  )
+
+
+# mixed with ECHO_momID and ECHO_childID
+arch_ntb_ids <- arch_ntb %>%
+  mutate(
+    PIN = as.character(PIN),
+    PIN = str_trim(PIN)
+  ) %>%
+  filter(!is.na(PIN)) %>%
+  distinct(PIN) %>%
+  pull(PIN)
+
+
 # ARCH NIH Toolbox
 arch_ntb <- read_excel(
-  "Z:/ECHO/CHARM/Data/ECHO 1/NIH TOOLBOX/ARCH NIHTB July 2023.xlsx",
+  "Z:/ECHO/CHARM/Data/NIH Toolbox Participants/ARCH NIHTB July 2023.xlsx",
   sheet = 2
 )
 
@@ -364,9 +319,6 @@ arch_ntb_ids <- arch_ntb %>%
   distinct(PIN) %>%
   pull(PIN)
 
-# ---- 1. only use the part of global crosswalk 
-# global_crosswalk_p 
-
 # ---- 2. Prepare ARCH NIH Toolbox IDs 
 arch_ntb_df <- tibble(PIN = arch_ntb_ids) %>%
   mutate(
@@ -374,41 +326,28 @@ arch_ntb_df <- tibble(PIN = arch_ntb_ids) %>%
     PIN = str_trim(PIN),
     # Identify ID type by last character
     id_type = if_else(str_ends(PIN, "0"), "mom", "child")
-  )
+  ) %>%
+  filter(id_type == "child")
 
-# ---- 3. Split by ID type 
-
-## 3a. Mom_ECHO_ID → MomID
-arch_ntb_mom_from_mom <- arch_ntb_df %>%
-  filter(id_type == "mom") %>%
-  left_join(
-    global_crosswalk_p,
-    by = c("PIN" = "Mom_ECHO_ID")
-  )
-
-## 3b. Child_ECHO_ID → MomID
-arch_ntb_mom_from_child <- arch_ntb_df %>%
-  filter(id_type == "child") %>%
-  left_join(
-    global_crosswalk_p,
-    by = c("PIN" = "Child_ECHO_ID")
-  )
-
-# ---- 4. Combine and extract unique MomID  
-arch_ntb_with_momid <- bind_rows(
-  arch_ntb_mom_from_mom,
-  arch_ntb_mom_from_child
+# ---- 3. Combine and extract unique MomID  
+arch_ntb_child_echo_ids <- union(
+  arch_ntb_raind_fixed %>% 
+    filter(Child_ECHO_ID != "NA") %>%
+    distinct(Child_ECHO_ID) %>%
+    pull(Child_ECHO_ID),
+  arch_ntb_df %>%
+    mutate(
+      Child_ECHO_ID = PIN
+    ) %>%
+    distinct(Child_ECHO_ID) %>%
+    pull(Child_ECHO_ID)
 )
 
-arch_ntb_mom_ids <- arch_ntb_with_momid %>%
-  filter(!is.na(MomID)) %>%
-  distinct(MomID) %>%
-  pull(MomID)
-
-length(intersect(arch_ntb_mom_ids, arch_diet_any_ids)) # 49
+length(intersect(arch_ntb_child_echo_ids, arch_diet_any_ids)) # 3
 
 ### 5.1.2 MARCH NIH Toolbox -------------------------------------------------
 
+# MARCH NIH Toolbox
 march_ntb <- read_excel(
   "Z:/ECHO/CHARM/Data/ECHO 1/NIH TOOLBOX/MARCH NIHTB July 2023 .xlsx",
   sheet = 2
@@ -416,6 +355,7 @@ march_ntb <- read_excel(
 
 # ECHO 2 NIH Toolbox
 echo2_ntb <- read_excel("Z:/ECHO/CHARM/Data/ECHO 2/NIH Toolbox Report/NIH Toolbox report Dec2025.xlsx")
+
 
 # ---- 1) Unique PINs from MARCH NTB 
 march_ntb_ids <- march_ntb %>%
@@ -434,43 +374,74 @@ march_ntb_child_ids <- march_ntb_ids %>%
   .[str_detect(., "M")] %>%
   unique()
 
-march_ntb_mom_ids_direct <- march_ntb_ids %>%
+march_ntb_mom_ids <- march_ntb_ids %>%
   as.character() %>%
   str_trim() %>%
   .[str_starts(., "P")] %>%
   unique()
 
 # ---- 3) Map ChildID -> MomID using crosswalk 
-march_ntb_child_mom <- tibble(ChildID = march_ntb_child_ids) %>%
-  left_join(global_crosswalk_p2, by = "ChildID")
+march_ntb_child_echo_ids_from_child <- tibble(ChildID = march_ntb_child_ids) %>%
+  left_join(global_crosswalk_p1, by = "ChildID") %>%
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
-march_ntb_mom_ids_from_child <- march_ntb_child_mom %>%
-  filter(!is.na(MomID)) %>%
-  distinct(MomID) %>%
-  pull(MomID)
+march_ntb_child_echo_ids_from_mom <- tibble(MomID = march_ntb_mom_ids) %>%
+  left_join(global_crosswalk_p1, by = "MomID") %>%
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
 # ---- 4) Map Child_ECHO_ID -> MomID using crosswalk
-echo2_ntb_child_ids <- echo2_ntb %>%
+echo2_ntb_child_df <- echo2_ntb %>%
   mutate(
     Child_ECHO_ID = as.character(ParticipantID),
     Child_ECHO_ID = str_trim(Child_ECHO_ID)
   ) %>%
-  left_join(global_crosswalk_p, by = "Child_ECHO_ID") %>%
-  filter(!is.na(MomID), MomID != "") %>%
-  distinct(MomID) %>%
-  pull(MomID)
+  left_join(global_crosswalk_p1, by = "Child_ECHO_ID") 
+
+
+# 1) MARCH: MomID starts with "P"
+march_ntb_child_echo_ids_from_ECHO2 <- echo2_ntb_child_df %>%
+  filter(
+    !is.na(MomID),
+    str_starts(MomID, "P")
+  ) %>%
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
+
+
+# 2) ARCH: MomID does NOT start with "P"
+arch_ntb_child_echo_ids_from_ECHO2 <- echo2_ntb_child_df %>%
+  filter(
+    !is.na(MomID),
+    !str_starts(MomID, "P")
+  ) %>%
+  filter(Child_ECHO_ID != "NA") %>%
+  distinct(Child_ECHO_ID) %>%
+  pull(Child_ECHO_ID)
 
 # ---- 5) Final MARCH NTB MomID list (union of mapped + direct + echo2)  
-march_ntb_mom_ids <- Reduce(
+march_ntb_child_echo_ids <- Reduce(
   union,
   list(
-    march_ntb_mom_ids_from_child,
-    march_ntb_mom_ids_direct,
-    echo2_ntb_child_ids
+    march_ntb_child_echo_ids_from_child,
+    march_ntb_child_echo_ids_from_mom,
+    march_ntb_child_echo_ids_from_ECHO2
   )
 )
 
-length(intersect(march_ntb_mom_ids, march_diet_any_ids)) # 114
+length(march_ntb_child_echo_ids) # 130
+
+length(intersect(march_ntb_child_echo_ids, march_diet_any_ids)) # 124
+
+# update ARCH
+arch_ntb_child_echo_ids_update <- union(arch_ntb_child_echo_ids, arch_ntb_child_echo_ids_from_ECHO2 )
+
+# check the overlap
+length(intersect(arch_diet_any_ids, arch_ntb_child_echo_ids_update)) #38
 
 ## 5.2. CBCL -----------------------------------------------------------------
 
@@ -484,8 +455,7 @@ arch_cbcl_pre <- read.csv(
 # arch_cbcl_pre
 get_overlap_n(
   df = arch_cbcl_pre,
-  diet_biomarker_ids = arch_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = arch_diet_any_ids
 )
 
 ### 5.2.2 MARCH CBCL --------------------------------------------------------
@@ -499,8 +469,7 @@ march_cbcl_pre <- read.csv(
 # march_cbcl_pre
 get_overlap_n(
   df = march_cbcl_pre,
-  diet_biomarker_ids = march_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_any_ids
 )
 
 ## 5.3 SRS-2 ----------------------------------------------------------------
@@ -518,15 +487,13 @@ arch_srs2_sch <- read.csv(
 # arch_srs2_pre, n = 27
 get_overlap_n(
   df = arch_srs2_pre,
-  diet_biomarker_ids = arch_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = arch_diet_any_ids
 )
 
-# arch_srs2_sch ,n = 60
+# arch_srs2_sch ,n = 61
 get_overlap_n(
   df = arch_srs2_sch,
-  diet_biomarker_ids = arch_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = arch_diet_any_ids
 )
 
 ### 5.3.2 MARCH SRS-2 -------------------------------------------------------
@@ -543,14 +510,12 @@ march_srs2_sch <- read.csv(
 
 get_overlap_n(
   df = march_srs2_pre,
-  diet_biomarker_ids = march_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_any_ids
 )
 
 get_overlap_n(
   df = march_srs2_sch,
-  diet_biomarker_ids = march_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_any_ids
 )
 
 ## 5.4 Ages and Stages -----------------------------------------------------
@@ -616,14 +581,12 @@ march_asq_9_combined <- tibble(
 
 get_overlap_n(
   df = march_asq_9_combined,
-  diet_biomarker_ids = march_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_any_ids
 )
 
 get_overlap_n(
   df = march_asq_36,
-  diet_biomarker_ids = march_diet_any_ids,
-  crosswalk_df = global_crosswalk_p
+  diet_biomarker_ids = march_diet_any_ids
 )
 
 
