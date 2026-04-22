@@ -1,46 +1,177 @@
-# ============================================================
-# Compare two data dictionaries (current vs updated partial)
-# - Identify items present in updated but missing in current
-# - Identify items with same key but different attributes
-# ============================================================
 
 rm(list = ls())
 
+
+# 0. Load Library ---------------------------------------------------------
+
 library(readxl)
-library(dplyr)
-library(stringr)
-library(janitor)
-library(tidyr)
+library(tidyverse)
 library(openxlsx)
 
-# 1) Read data -------------------------------------------------------------
-current_raw <- read_xlsx(file_current) %>% clean_names()
-updated_raw <- read_xlsx(file_updated) %>% clean_names()
 
-# Extract variable_name (no cleaning, no standardization)
-current_vars <- current_raw %>%
-  select(variable_name) %>%
+# ---------------- Paths ----------------
+echo_dir <- "Z:/ECHO/CHARM/Data/ECHO 2/2025 Nov Download"
+
+ecp_dict <- "Z:/ECHO/CHARM/Data/ECHO 2/ECP_v3_0_DataDictionary_20240520.xlsx"
+
+charm_dict <- "C:/Users/tianjiah/Box/CHARM Final/Science & Investigators/Data Dictionaries/CHARM Data Dictionaries/MARCH_Full_Data_Dictionary.xlsx"
+
+
+# 1. Get all CSV files -----------------------------------------------------
+csv_files <- list.files(
+  path = echo_dir,
+  pattern = "\\.csv$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+# 2. Extract column names from each CSV (keep provenance) ------------------
+get_colnames <- function(file){
+  
+  # read only header (fast)
+  df <- readr::read_csv(file, n_max = 0, show_col_types = FALSE, progress = FALSE)
+  
+  tibble(
+    file_path = file,
+    file_name = basename(file),
+    variable  = names(df)
+  )
+}
+
+var_long <- purrr::map_dfr(csv_files, get_colnames)
+
+# Optional quick checks
+cat("Total file-variable rows:", nrow(var_long), "\n")
+cat("Total unique files:", n_distinct(var_long$file_path), "\n")
+cat("Total unique variables:", n_distinct(var_long$variable), "\n")
+
+
+# 3. Import ECP dictionary -------------------------------------------------
+
+ecp_sheets <- excel_sheets(ecp_dict)
+
+ecp_vars <- purrr::map_dfr(ecp_sheets, function(s){
+  
+  df <- read_excel(ecp_dict, sheet = s)
+  
+  # assume column name is VariableName
+  if("VariableName" %in% names(df)){
+    
+    tibble(variable = df$VariableName)
+    
+  } else {
+    
+    tibble(variable = character(0))
+    
+  }
+  
+}) %>%
+  filter(!is.na(variable)) %>%
   distinct()
 
-updated_vars <- updated_raw %>%
-  select(variable_name) %>%
-  distinct()
+ecp_vars <- ecp_vars$variable
 
-# Variables in updated but NOT in current
-missing_in_current <- updated_vars %>%
-  anti_join(current_vars, by = "variable_name") %>%
-  arrange(variable_name)
 
-# Quick summary
-cat("Updated unique variable_name:", nrow(updated_vars), "\n")
-cat("Current unique variable_name:", nrow(current_vars), "\n")
-cat("Missing in current:", nrow(missing_in_current), "\n")
+# 4. Import CHARM dictionary -----------------------------------------------
 
-# Save to Excel (optional)
-out_file <- "C:/Users/tianjiah/Desktop/updated_vars_missing_in_current.xlsx"
-wb <- createWorkbook()
-addWorksheet(wb, "missing_in_current")
-writeData(wb, "missing_in_current", missing_in_current)
-saveWorkbook(wb, out_file, overwrite = TRUE)
+charm_df <- read_excel(charm_dict)
 
-cat("Saved:", out_file, "\n")
+charm_vars <- charm_df %>%
+  filter(!is.na(`Variable Name`)) %>%
+  pull(`Variable Name`) %>%
+  unique()
+
+
+# 5. Compare variables -----------------------------------------------------
+
+var_list <- unique(var_long$variable)
+
+# detail table at variable level (unique variables)
+detail_var <- tibble(variable = var_list) %>%
+  mutate(
+    in_ECP   = variable %in% ecp_vars,
+    in_CHARM = variable %in% charm_vars
+  )
+
+# lineage table: keep file provenance + dictionary membership
+lineage <- var_long %>%
+  left_join(detail_var, by = "variable")
+
+
+in_ecp   <- var_list %in% ecp_vars
+in_charm <- var_list %in% charm_vars
+
+summary <- tibble(
+  Category = c(
+    "Total variables",
+    "Match ECP dictionary",
+    "Match CHARM dictionary",
+    "Match BOTH",
+    "Match ECP only",
+    "Match CHARM only",
+    "Match NEITHER"
+  ),
+  Count = c(
+    length(var_list),
+    sum(in_ecp),
+    sum(in_charm),
+    sum(in_ecp & in_charm),
+    sum(in_ecp & !in_charm),
+    sum(!in_ecp & in_charm),
+    sum(!in_ecp & !in_charm)
+  )
+)
+
+print(summary)
+
+
+
+# 6. Export results --------------------------------------------------------
+
+# find the variables that are in the CSVs but not in either dictionary
+vars_neither <- detail_var %>%
+  filter(!in_ECP & !in_CHARM) %>%
+  pull(variable)
+
+missing_trace <- lineage %>%
+  filter(variable %in% vars_neither) %>%
+  arrange(variable, file_name)
+
+# Variable -> list of files (nice for review)
+missing_trace_collapsed <- missing_trace %>%
+  group_by(variable) %>%+-
+  summarise(
+    n_files = n_distinct(file_path),
+    files = paste(sort(unique(file_name)), collapse = "; "),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_files), variable)
+
+print(missing_trace_collapsed, n = 50)
+
+
+# export resutls
+output_dir <- "Z:/ECHO/CHARM/Data/ECHO 2/ECHO2 Data Dictionary"
+
+# summary
+readr::write_csv(summary,
+                 file.path(output_dir, "summary.csv"))
+
+# variable-level results
+readr::write_csv(detail_var,
+                 file.path(output_dir, "detail_variable_level.csv"))
+
+# full lineage table (all variables)
+readr::write_csv(lineage,
+                 file.path(output_dir, "lineage_file_variable_level.csv"))
+
+# missing variable trace (row-level)
+readr::write_csv(missing_trace,
+                 file.path(output_dir, "missing_trace.csv"))
+
+# missing variable summary
+readr::write_csv(missing_trace_collapsed,
+                 file.path(output_dir, "missing_trace_collapsed.csv"))
+
+
+

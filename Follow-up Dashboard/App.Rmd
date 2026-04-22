@@ -1,0 +1,205 @@
+---
+title: "Dashboard"
+output: html_document
+date: "2026-04-16"
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(DT)
+```
+
+```{r}
+# Use your existing final_data
+data <- final_data
+
+ui <- fluidPage(
+  titlePanel("Follow-up Team Dashboard"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(
+        "statusId",
+        "Select statusId:",
+        choices = c("All", sort(unique(na.omit(data$statusId)))),
+        selected = "All"
+      ),
+      
+      selectInput(
+        "event_short",
+        "Select event_short:",
+        choices = c("All", sort(unique(na.omit(data$event_short)))),
+        selected = "All"
+      ),
+      
+      selectInput(
+        "follow_up_team",
+        "Select follow-up team:",
+        choices = c("All", sort(unique(na.omit(data$follow_up_team)))),
+        selected = "All"
+      )
+    ),
+    
+    mainPanel(
+      fluidRow(
+        column(
+          width = 4,
+          wellPanel(
+            h4("Total Score"),
+            textOutput("total_score")
+          )
+        ),
+        column(
+          width = 4,
+          wellPanel(
+            h4("Number of Records"),
+            textOutput("n_records")
+          )
+        ),
+        column(
+          width = 4,
+          wellPanel(
+            h4("Average Score"),
+            textOutput("avg_score")
+          )
+        )
+      ),
+      
+      tabsetPanel(
+        tabPanel(
+          "Score by Team",
+          plotlyOutput("score_by_team", height = "450px")
+        ),
+        tabPanel(
+          "Score by Event",
+          plotlyOutput("score_by_event", height = "450px")
+        ),
+        tabPanel(
+          "Team x Event Heatmap",
+          plotlyOutput("heatmap", height = "500px")
+        ),
+        tabPanel(
+          "Data Table",
+          DTOutput("data_table")
+        )
+      )
+    )
+  )
+)
+```
+
+```{r}
+server <- function(input, output, session) {
+  
+  filtered_data <- reactive({
+    df <- data
+    
+    if (input$statusId != "All") {
+      df <- df %>% filter(statusId == input$statusId)
+    }
+    
+    if (input$event_short != "All") {
+      df <- df %>% filter(event_short == input$event_short)
+    }
+    
+    if (input$follow_up_team != "All") {
+      df <- df %>% filter(follow_up_team == input$follow_up_team)
+    }
+    
+    df
+  })
+  
+  output$total_score <- renderText({
+    sum(filtered_data()$Score, na.rm = TRUE)
+  })
+  
+  output$n_records <- renderText({
+    nrow(filtered_data())
+  })
+  
+  output$avg_score <- renderText({
+    round(mean(filtered_data()$Score, na.rm = TRUE), 3)
+  })
+  
+  output$score_by_team <- renderPlotly({
+    df <- filtered_data() %>%
+      group_by(follow_up_team) %>%
+      summarise(total_score = sum(Score, na.rm = TRUE), .groups = "drop")
+    
+    p <- ggplot(df, aes(x = follow_up_team, y = total_score)) +
+      geom_col() +
+      labs(
+        title = "Total Score by Follow-up Team",
+        x = "Follow-up Team",
+        y = "Total Score"
+      ) +
+      theme_minimal()
+    
+    ggplotly(p)
+  })
+  
+  output$score_by_event <- renderPlotly({
+    df <- filtered_data() %>%
+      group_by(event_short) %>%
+      summarise(total_score = sum(Score, na.rm = TRUE), .groups = "drop")
+    
+    p <- ggplot(df, aes(x = event_short, y = total_score)) +
+      geom_col() +
+      labs(
+        title = "Total Score by Event",
+        x = "Event",
+        y = "Total Score"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    ggplotly(p)
+  })
+  
+  output$heatmap <- renderPlotly({
+    df <- filtered_data() %>%
+      group_by(follow_up_team, event_short) %>%
+      summarise(total_score = sum(Score, na.rm = TRUE), .groups = "drop")
+    
+    p <- ggplot(df, aes(x = event_short, y = follow_up_team, fill = total_score)) +
+      geom_tile() +
+      labs(
+        title = "Team by Event Score Heatmap",
+        x = "Event",
+        y = "Follow-up Team",
+        fill = "Score"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    ggplotly(p)
+  })
+  
+  output$data_table <- renderDT({
+    datatable(
+      filtered_data(),
+      options = list(
+        pageLength = 20,
+        scrollX = TRUE
+      )
+    )
+  })
+}
+```
+
+```{r}
+shinyApp(ui = ui, server = server)
+```
+
