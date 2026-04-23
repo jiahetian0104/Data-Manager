@@ -99,16 +99,17 @@ colnames(long_data)
 ## 1.4. Filter Related Data --------------------------------------------------
 
 # for now, we don't consider the participants with "Potential Participants" and "Withdrawn" status.
+status_prefix_map <- c(
+  "11-17 Year" = "2026_11_17yr_",
+  "18-20 Year" = "2026_18_20yr_",
+  "3-5 Year" = "2026_3_5yr_",
+  "6-10 Year" = "2026_6_10yr_"
+)
+
 filtered_long_data <- long_data %>%
   # Map each status group to its expected event prefix
   mutate(
-    expected_prefix = case_when(
-      statusId == "11-17 Year" ~ "2026_11_17yr_",
-      statusId == "18-20 Year" ~ "2026_18_20yr_",
-      statusId == "3-5 Year"   ~ "2026_3_5yr_",
-      statusId == "6-10 Year"  ~ "2026_6_10yr_",
-      TRUE ~ NA_character_
-    )
+    expected_prefix = recode(statusId, !!!status_prefix_map, .default = NA_character_)
   ) %>%
   # Keep only target status groups
   filter(!is.na(expected_prefix)) %>%
@@ -414,7 +415,7 @@ process_call_list <- function(df, id_col, staff_name, source_name, split_pin = T
 
 staff_assignment_main <- bind_rows(
   process_call_list(call_lists$amy,          id_col = "ECHO ID",    staff_name = "Amy",     source_name = "amy",            split_pin = TRUE),
-  process_call_list(call_lists$jo,           id_col = "Global.ID..", staff_name = "Jo",      source_name = "jo",             split_pin = TRUE),
+  process_call_list(call_lists$jo,           id_col = "Global.ID..",staff_name = "Jo",      source_name = "jo",             split_pin = FALSE),
   process_call_list(call_lists$jody_sheet1,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet1",    split_pin = TRUE),
   process_call_list(call_lists$jody_sheet2,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet2",    split_pin = TRUE),
   process_call_list(call_lists$nicole_sheet1,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet1",  split_pin = FALSE),
@@ -592,3 +593,9 @@ dashboard_summary <- dashboard_detail %>%
     progress = numerator / denominator,
     .groups = "drop"
   )
+
+
+# 6. Save dashboard data --------------------------------------------------
+
+write.csv(dashboard_detail, '/Users/tianjiah/Library/CloudStorage/OneDrive-MichiganStateUniversity/Data Manager/Data-Manager/Follow-up Dashboard/dashboard_detail.csv', row.names = FALSE)
+write.csv(dashboard_summary, file.path(BASE_PATH, "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Dashboard Summary April 2026.csv"), row.names = FALSE)
