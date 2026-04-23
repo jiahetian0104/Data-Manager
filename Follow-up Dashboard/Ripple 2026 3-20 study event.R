@@ -288,6 +288,13 @@ participant_reconsent_long <- participant_registration_clean %>%
 
 PASSWORD <- "Epi$2018"
 
+# Detect OS
+if (Sys.info()["sysname"] == "Windows") {
+  BASE_PATH <- "Z:/ECHO/CHARM"
+} else {
+  BASE_PATH <- "/Volumes/Groups/ECHO/CHARM"
+}
+
 # Helper: build full path from BASE_PATH
 get_path <- function(relative_path) {
   file.path(BASE_PATH, relative_path)
@@ -304,49 +311,102 @@ read_protected_excel <- function(path, sheet) {
   readWorksheet(wb, sheet = sheet, header = TRUE)
 }
 
-# File paths
+# File paths (UPDATED)
+# =========================
+
 amy_path <- get_path(
-  "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Amy/2026 Call List - Amy/2026 Working Call List - Amy Updated.xlsx"
+  "Breanna/2026 Call List Copies/2026 Call List - Amy.xlsx"
+)
+
+cassie_path <- get_path(
+  "Breanna/2026 Call List Copies/2026 Call List - Cassie (18-20yr).xlsx"
 )
 
 jo_path <- get_path(
-  "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Jo/2026 Call List (11-17)/2026 Call List - Jo.xlsx"
+  "Breanna/2026 Call List Copies/2026 Call List - Jo.xlsx"
 )
 
 jody_path <- get_path(
-  "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Jody/2026 Call List - Jody/Copy of Copy of 2026 Call List - Jody.xlsx"
+  "Breanna/2026 Call List Copies/2026 Call List - Jody.xlsx"
 )
 
-nicole_path <- get_path(
-  "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Nicole/2026/2026 Call List - Nicole (3,4yr) - Current.xlsx"
+nicole_23_path <- get_path(
+  "Breanna/2026 Call List Copies/2026 Call List - Nicole (2,3yr).xlsx"
 )
 
-shetoye_path <- get_path(
-  "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Shetoye/2026 Call List - Toye/2026 Call List Toye - With Caregiver Names.xlsx"
+nicole_34_path <- get_path(
+  "Breanna/2026 Call List Copies/2026 Call List - Nicole (3,4yr).xlsx"
+)
+
+toye_path <- get_path(
+  "Breanna/2026 Call List Copies/2026 Call List - Toye.xlsx"
 )
 
 # Import all call lists
+# =========================
+
 call_lists <- list(
   
   # No password
-  amy = read_unprotected_excel(amy_path, sheet = 1),
+  amy = read_protected_excel(amy_path, sheet = 1),
+  cassie = read_protected_excel(cassie_path, sheet = 1),
+  toye = read_protected_excel(toye_path, sheet = 1),
   
-  # Password, only sheet
+  # Password protected
   jo = read_protected_excel(jo_path, sheet = 1),
   
-  # Password, first two sheets
-  jody_sheet1 = read_protected_excel(jody_path, sheet = 2), # 6-10 yr sheet
-  jody_sheet2 = read_protected_excel(jody_path, sheet = 3), # 6-10 yr potential sheet
+  # Jody (sheet 2)
+  jody = read_protected_excel(jody_path, sheet = 2),
   
-  # Password, first six sheets
-  nicole_sheet1 = read_protected_excel(nicole_path, sheet = 1), # potential
-  nicole_sheet2 = read_protected_excel(nicole_path, sheet = 2), # updated consent
-  nicole_sheet3 = read_protected_excel(nicole_path, sheet = 3), # survey
-  nicole_sheet4 = read_protected_excel(nicole_path, sheet = 4), # survey complete
-  
-  # No password
-  shetoye = read_unprotected_excel(shetoye_path, sheet = 1)
+  # Nicole split
+  nicole_23 = read_protected_excel(nicole_23_path, sheet = 1) %>%
+    filter(status_2026 == "3-5 Year"),
+  nicole_34 = read_protected_excel(nicole_34_path, sheet = 1)
 )
+
+# # File paths
+# amy_path <- get_path(
+#   "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Amy/2026 Call List - Amy/2026 Working Call List - Amy Updated.xlsx"
+# )
+# 
+# jo_path <- get_path(
+#   "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Jo/2026 Call List (11-17)/2026 Call List - Jo.xlsx"
+# )
+# 
+# jody_path <- get_path(
+#   "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Jody/2026 Call List - Jody/Copy of Copy of 2026 Call List - Jody.xlsx"
+# )
+# 
+# nicole_path <- get_path(
+#   "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Nicole/2026/2026 Call List - Nicole (3,4yr) - Current.xlsx"
+# )
+# 
+# shetoye_path <- get_path(
+#   "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Shetoye/2026 Call List - Toye/2026 Call List Toye - With Caregiver Names.xlsx"
+# )
+# 
+# # Import all call lists
+# call_lists <- list(
+#   
+#   # No password
+#   amy = read_unprotected_excel(amy_path, sheet = 1),
+#   
+#   # Password, only sheet
+#   jo = read_protected_excel(jo_path, sheet = 1),
+#   
+#   # Password, first two sheets
+#   jody_sheet1 = read_protected_excel(jody_path, sheet = 2), # 6-10 yr sheet
+#   jody_sheet2 = read_protected_excel(jody_path, sheet = 3), # 6-10 yr potential sheet
+#   
+#   # Password, first six sheets
+#   nicole_sheet1 = read_protected_excel(nicole_path, sheet = 1), # potential
+#   nicole_sheet2 = read_protected_excel(nicole_path, sheet = 2), # updated consent
+#   nicole_sheet3 = read_protected_excel(nicole_path, sheet = 3), # survey
+#   nicole_sheet4 = read_protected_excel(nicole_path, sheet = 4), # survey complete
+#   
+#   # No password
+#   shetoye = read_unprotected_excel(shetoye_path, sheet = 1)
+# )
 
 # summarize call lists
 call_list_summary <- imap_dfr(call_lists, ~ tibble(
@@ -375,14 +435,86 @@ purrr::iwalk(call_lists, ~ {
 
 ## 3.2 Clean Call List -----------------------------------------------------
 
-# Helper function: standardize one call list
-process_call_list <- function(df, id_col, staff_name, source_name, split_pin = TRUE) {
+
+
+# # Helper function: standardize one call list
+# process_call_list <- function(df, id_col, staff_name, source_name, split_pin = TRUE) {
+#   
+#   df <- df %>%
+#     mutate(
+#       raw_id = as.character(.data[[id_col]])
+#     ) %>%
+#     filter(!is.na(raw_id), raw_id != "")
+#   
+#   if (split_pin) {
+#     df <- df %>%
+#       extract(
+#         raw_id,
+#         into = c("child_echo_id", "PIN"),
+#         regex = "^(.*)\\s*\\((.*)\\)$",
+#         remove = FALSE
+#       ) %>%
+#       mutate(
+#         child_echo_id = str_trim(child_echo_id),
+#         PIN = str_trim(PIN)
+#       )
+#   } else {
+#     df <- df %>%
+#       mutate(
+#         child_echo_id = str_trim(raw_id),
+#         PIN = NA_character_
+#       )
+#   }
+#   
+#   df %>%
+#     transmute(
+#       child_echo_id,
+#       PIN,
+#       staff = staff_name,
+#       source_sheet = source_name
+#     )
+# }
+# 
+# staff_assignment_main <- bind_rows(
+#   process_call_list(call_lists$amy,          id_col = "ECHO ID",    staff_name = "Amy",     source_name = "amy",            split_pin = TRUE),
+#   process_call_list(call_lists$jo,           id_col = "Global.ID..",staff_name = "Jo",      source_name = "jo",             split_pin = FALSE),
+#   process_call_list(call_lists$jody_sheet1,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet1",    split_pin = TRUE),
+#   process_call_list(call_lists$jody_sheet2,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet2",    split_pin = TRUE),
+#   process_call_list(call_lists$nicole_sheet1,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet1",  split_pin = FALSE),
+#   process_call_list(call_lists$nicole_sheet2,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet2",  split_pin = FALSE),
+#   process_call_list(call_lists$nicole_sheet3,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet3",  split_pin = FALSE),
+#   process_call_list(call_lists$nicole_sheet4,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet4",  split_pin = FALSE),
+#   process_call_list(call_lists$shetoye,      id_col = "ECHO ID",    staff_name = "Toye",    source_name = "Toye",           split_pin = TRUE)
+# ) %>%
+#   distinct()
+
+
+# ---------- update
+
+process_call_list <- function(df, id_col, status_col, staff_name, source_name, split_pin = TRUE) {
   
   df <- df %>%
     mutate(
-      raw_id = as.character(.data[[id_col]])
+      raw_id = as.character(.data[[id_col]]),
+      status_2026_raw = as.character(.data[[status_col]])
     ) %>%
-    filter(!is.na(raw_id), raw_id != "")
+    filter(!is.na(raw_id), raw_id != "") %>%
+    mutate(
+      status_2026_raw = str_trim(status_2026_raw),
+      status_2026_std = case_when(
+        is.na(status_2026_raw) | status_2026_raw == "" ~ NA_character_,
+        
+        str_detect(str_to_lower(status_2026_raw), "3-5") ~ "3-5 Year",
+        str_detect(str_to_lower(status_2026_raw), "2-3") ~ "2-3 Year",
+        str_detect(str_to_lower(status_2026_raw), "18-20") ~ "18-20 Year",
+        str_detect(str_to_lower(status_2026_raw), "potential") ~ "Potential Participants",
+        str_detect(str_to_lower(status_2026_raw), "updated consent") ~ "Updated Consent",
+        str_detect(str_to_lower(status_2026_raw), "survey complete") ~ "Survey Complete",
+        str_detect(str_to_lower(status_2026_raw), "survey") ~ "Survey",
+        
+        TRUE ~ status_2026_raw
+      )
+    )
   
   if (split_pin) {
     df <- df %>%
@@ -393,6 +525,7 @@ process_call_list <- function(df, id_col, staff_name, source_name, split_pin = T
         remove = FALSE
       ) %>%
       mutate(
+        child_echo_id = if_else(is.na(child_echo_id), raw_id, child_echo_id),
         child_echo_id = str_trim(child_echo_id),
         PIN = str_trim(PIN)
       )
@@ -408,24 +541,82 @@ process_call_list <- function(df, id_col, staff_name, source_name, split_pin = T
     transmute(
       child_echo_id,
       PIN,
+      status_2026_raw,
+      status_2026_std,
       staff = staff_name,
       source_sheet = source_name
     )
 }
 
 staff_assignment_main <- bind_rows(
-  process_call_list(call_lists$amy,          id_col = "ECHO ID",    staff_name = "Amy",     source_name = "amy",            split_pin = TRUE),
-  process_call_list(call_lists$jo,           id_col = "Global.ID..",staff_name = "Jo",      source_name = "jo",             split_pin = FALSE),
-  process_call_list(call_lists$jody_sheet1,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet1",    split_pin = TRUE),
-  process_call_list(call_lists$jody_sheet2,  id_col = "ECHO.ID.",   staff_name = "Jody",    source_name = "jody_sheet2",    split_pin = TRUE),
-  process_call_list(call_lists$nicole_sheet1,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet1",  split_pin = FALSE),
-  process_call_list(call_lists$nicole_sheet2,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet2",  split_pin = FALSE),
-  process_call_list(call_lists$nicole_sheet3,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet3",  split_pin = FALSE),
-  process_call_list(call_lists$nicole_sheet4,id_col = "ECHO.ID",    staff_name = "Nicole",  source_name = "nicole_sheet4",  split_pin = FALSE),
-  process_call_list(call_lists$shetoye,      id_col = "ECHO ID",    staff_name = "Toye",    source_name = "Toye",           split_pin = TRUE)
+  process_call_list(
+    call_lists$amy,
+    id_col = "ECHO.ID",
+    status_col = "X2026.Status.",
+    staff_name = "Amy",
+    source_name = "amy",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$cassie,
+    id_col = "ECHO.ID.",
+    status_col = "X2026.Status.",
+    staff_name = "Cassie",
+    source_name = "cassie",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$toye,
+    id_col = "ECHO.ID",
+    status_col = "X2026.Status.",
+    staff_name = "Toye",
+    source_name = "toye",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$jo,
+    id_col = "globalId",
+    status_col = "X2026.Status.",
+    staff_name = "Jo",
+    source_name = "jo",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$jody,
+    id_col = "ECHO.ID.",
+    status_col = "Next.2026.Status.",
+    staff_name = "Jody",
+    source_name = "jody",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$nicole_23,
+    id_col = "globalId",
+    status_col = "status_2026",
+    staff_name = "Nicole",
+    source_name = "nicole_23",
+    split_pin = TRUE
+  ),
+  process_call_list(
+    call_lists$nicole_34,
+    id_col = "ECHO.ID..pin.",
+    status_col = "X2026.Status.",
+    staff_name = "Nicole",
+    source_name = "nicole_34",
+    split_pin = TRUE
+  )
 ) %>%
   distinct()
 
+staff_assignment_main %>%
+  count(source_sheet, status_2026_raw, status_2026_std, sort = TRUE)
+
+# check duplicate
+dup_id <- staff_assignment_main %>%
+  count(child_echo_id) %>%
+  filter(n > 1)
+
+dup_id # n = 0
 
 # 4. event_eligibility ----------------------------------------------------
 
