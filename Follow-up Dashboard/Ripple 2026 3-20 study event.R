@@ -349,7 +349,7 @@ call_lists <- list(
   
   # No password
   amy = read_protected_excel(amy_path, sheet = 1),
-  cassie = read_protected_excel(cassie_path, sheet = 1),
+  # cassie = read_protected_excel(cassie_path, sheet = 1),
   toye = read_protected_excel(toye_path, sheet = 1),
   
   # Password protected
@@ -557,14 +557,14 @@ staff_assignment_main <- bind_rows(
     source_name = "amy",
     split_pin = TRUE
   ),
-  process_call_list(
-    call_lists$cassie,
-    id_col = "ECHO.ID.",
-    status_col = "X2026.Status.",
-    staff_name = "Cassie",
-    source_name = "cassie",
-    split_pin = TRUE
-  ),
+  # process_call_list(
+  #   call_lists$cassie,
+  #   id_col = "ECHO.ID.",
+  #   status_col = "X2026.Status.",
+  #   staff_name = "Cassie",
+  #   source_name = "cassie",
+  #   split_pin = TRUE
+  # ),
   process_call_list(
     call_lists$toye,
     id_col = "ECHO.ID",
@@ -631,7 +631,7 @@ event_reference <- tibble::tibble(
 )
 
 staff_event_base <- staff_assignment_main %>%
-  distinct(child_echo_id, PIN, staff) %>%
+  distinct(child_echo_id, PIN, status_2026_std, staff) %>%
   crossing(event_reference)
 
 ripple_base <- selected_data %>%
