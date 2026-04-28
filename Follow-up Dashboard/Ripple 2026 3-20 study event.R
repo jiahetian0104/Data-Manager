@@ -211,7 +211,7 @@ if (Sys.info()["sysname"] == "Windows") {
 # Construct file path
 pr_path <- file.path(
   BASE_PATH,
-  "Data/Reports/Participant Registration/ParticipantRegistration_Export_04152026.xlsx"
+  "Data/Reports/Participant Registration/ParticipantRegistration_Export_04282026.xlsx"
 )
 
 # Import data
@@ -307,8 +307,8 @@ read_unprotected_excel <- function(path, sheet = 1) {
 
 # Helper: read password-protected Excel with XLConnect
 read_protected_excel <- function(path, sheet) {
-  wb <- loadWorkbook(path, password = PASSWORD)
-  readWorksheet(wb, sheet = sheet, header = TRUE)
+  wb <- XLConnect::loadWorkbook(filename = path, password = PASSWORD)
+  XLConnect::readWorksheet(wb, sheet = sheet, header = TRUE)
 }
 
 # File paths (UPDATED)
@@ -774,19 +774,95 @@ dashboard_detail <- dashboard_detail %>%
     )
   )
 
+summarise_dashboard <- function(data) {
+  summary_by_event <- data %>%
+    group_by(staff, event_short) %>%
+    summarise(
+      denominator = sum(eligible_flag, na.rm = TRUE),
+      numerator = sum(if_else(eligible_flag == 1, Score, 0), na.rm = TRUE),
+      progress = numerator / denominator,
+      .groups = "drop"
+    )
+  
+  summary_overall <- data %>%
+    group_by(staff) %>%
+    summarise(
+      denominator = sum(eligible_flag, na.rm = TRUE),
+      numerator = sum(if_else(eligible_flag == 1, Score, 0), na.rm = TRUE),
+      progress = numerator / denominator,
+      .groups = "drop"
+    ) %>%
+    mutate(event_short = "Overall") %>%
+    relocate(event_short, .after = staff)
+  
+  bind_rows(summary_by_event, summary_overall)
+}
 
 
-dashboard_summary <- dashboard_detail %>%
-  group_by(staff, event_short) %>%
-  summarise(
-    denominator = sum(eligible_flag, na.rm = TRUE),
-    numerator = sum(if_else(eligible_flag == 1, Score, 0), na.rm = TRUE),
-    progress = numerator / denominator,
-    .groups = "drop"
-  )
 
+# ============================================================
+# Save dashboard outputs for Streamlit
+# ============================================================
 
-# 6. Save dashboard data --------------------------------------------------
+library(openxlsx)
+library(readr)
+library(fs)
 
-write.csv(dashboard_detail, '/Users/tianjiah/Library/CloudStorage/OneDrive-MichiganStateUniversity/Data Manager/Data-Manager/Follow-up Dashboard/dashboard_detail.csv', row.names = FALSE)
-write.csv(dashboard_summary, file.path(BASE_PATH, "FOLLOW-UP TEAM/ECHO 2 Re-Consent Call Lists/Dashboard Summary April 2026.csv"), row.names = FALSE)
+# Project folder
+APP_DIR <- '/Users/tianjiah/Library/CloudStorage/OneDrive-MichiganStateUniversity/Data Manager/Data-Manager/Follow-up Dashboard/followup_streamlit_app'
+
+# Output folders
+latest_dir <- file.path(APP_DIR, "data", "latest")
+snapshot_date <- format(Sys.Date(), "%Y-%m-%d")
+snapshot_dir <- file.path(APP_DIR, "data", "snapshots", snapshot_date)
+
+dir_create(latest_dir)
+dir_create(snapshot_dir)
+
+# ------------------------------------------------------------
+# 1. Save latest detail CSV
+# ------------------------------------------------------------
+
+write_csv(
+  dashboard_detail,
+  file.path(latest_dir, "dashboard_detail.csv"),
+  na = ""
+)
+
+# ------------------------------------------------------------
+# 2. Save snapshot detail CSV
+# ------------------------------------------------------------
+
+write_csv(
+  dashboard_detail,
+  file.path(snapshot_dir, "detail.csv"),
+  na = ""
+)
+
+# ------------------------------------------------------------
+# 3. Create summary tables
+# ------------------------------------------------------------
+
+dashboard_summary_with_potential <- summarise_dashboard(dashboard_detail)
+
+dashboard_summary_without_potential <- dashboard_detail %>%
+  filter(statusId != "Potential Participants" | is.na(statusId)) %>%
+  summarise_dashboard()
+
+# ------------------------------------------------------------
+# 4. Save snapshot summary Excel with two sheets
+# ------------------------------------------------------------
+
+summary_wb <- createWorkbook()
+
+addWorksheet(summary_wb, "With Potential")
+writeData(summary_wb, "With Potential", dashboard_summary_with_potential)
+
+addWorksheet(summary_wb, "Without Potential")
+writeData(summary_wb, "Without Potential", dashboard_summary_without_potential)
+
+saveWorkbook(
+  summary_wb,
+  file.path(snapshot_dir, "summary.xlsx"),
+  overwrite = TRUE
+)
