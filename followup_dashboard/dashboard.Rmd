@@ -1,0 +1,204 @@
+---
+title: "Follow-up Dashboard"
+params:
+  data_path: NULL
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    self_contained: true
+runtime: shiny
+---
+
+```{r}
+library(flexdashboard)
+library(shiny)
+library(dplyr)
+library(readr)
+library(plotly)
+library(DT)
+library(scales)
+library(ggplot2)
+
+print(params$data_path)
+print(file.exists(params$data_path))
+
+dashboard_detail <- read_csv(params$data_path, show_col_types = FALSE)
+
+dashboard_detail <- dashboard_detail %>%
+  mutate(
+    eligible_flag = as.numeric(eligible_flag),
+    Score = as.numeric(Score)
+  )
+```
+
+```{r}
+staff_choices <- sort(unique(na.omit(dashboard_detail$staff)))
+event_choices <- sort(unique(na.omit(dashboard_detail$event_short)))
+status_choices <- sort(unique(na.omit(dashboard_detail$statusId)))
+
+selectInput(
+  "staff",
+  "Staff",
+  choices = c("All", staff_choices),
+  selected = "All"
+)
+
+selectInput(
+  "event_short",
+  "Event",
+  choices = c("All", event_choices),
+  selected = "All"
+)
+
+selectInput(
+  "statusId",
+  "Status",
+  choices = c("All", status_choices),
+  selected = "All"
+)
+```
+
+```{r}
+filtered_data <- reactive({
+  df <- dashboard_detail
+
+  if (input$staff != "All") {
+    df <- df %>% filter(staff == input$staff)
+  }
+
+  if (input$event_short != "All") {
+    df <- df %>% filter(event_short == input$event_short)
+  }
+
+  if (input$statusId != "All") {
+    df <- df %>% filter(statusId == input$statusId)
+  }
+
+  df
+})
+
+summary_data <- reactive({
+  filtered_data() %>%
+    group_by(staff, event_short) %>%
+    summarise(
+      denominator = sum(eligible_flag == 1, na.rm = TRUE),
+      numerator = sum(if_else(eligible_flag == 1, coalesce(Score, 0), 0), na.rm = TRUE),
+      progress = if_else(denominator > 0, numerator / denominator, NA_real_),
+      .groups = "drop"
+    ) %>%
+    arrange(staff, event_short)
+})
+```
+
+```{r}
+renderValueBox({
+  valueBox(
+    value = sum(filtered_data()$eligible_flag == 1, na.rm = TRUE),
+    caption = "Total Denominator"
+  )
+})
+```
+
+```{r}
+renderValueBox({
+  valueBox(
+    value = sum(if_else(filtered_data()$eligible_flag == 1, coalesce(filtered_data()$Score, 0), 0), na.rm = TRUE),
+    caption = "Total Numerator"
+  )
+})
+```
+
+```{r}
+renderValueBox({
+  denom <- sum(filtered_data()$eligible_flag == 1, na.rm = TRUE)
+  num <- sum(if_else(filtered_data()$eligible_flag == 1, coalesce(filtered_data()$Score, 0), 0), na.rm = TRUE)
+  prog <- ifelse(denom > 0, num / denom, NA_real_)
+
+  valueBox(
+    value = ifelse(is.na(prog), "NA", percent(prog, accuracy = 0.1)),
+    caption = "Overall Progress"
+  )
+})
+```
+
+```{r}
+renderPlotly({
+  df <- filtered_data() %>%
+    group_by(staff) %>%
+    summarise(
+      denominator = sum(eligible_flag == 1, na.rm = TRUE),
+      numerator = sum(if_else(eligible_flag == 1, coalesce(Score, 0), 0), na.rm = TRUE),
+      progress = if_else(denominator > 0, numerator / denominator, NA_real_),
+      .groups = "drop"
+    )
+
+  p <- ggplot(df, aes(x = reorder(staff, progress), y = progress)) +
+    geom_col() +
+    scale_y_continuous(labels = percent_format()) +
+    labs(
+      x = "Staff",
+      y = "Progress",
+      title = "Progress by Staff"
+    ) +
+    theme_minimal()
+
+  ggplotly(p)
+})
+```
+
+```{r}
+renderPlotly({
+  df <- filtered_data() %>%
+    group_by(event_short) %>%
+    summarise(
+      denominator = sum(eligible_flag == 1, na.rm = TRUE),
+      numerator = sum(if_else(eligible_flag == 1, coalesce(Score, 0), 0), na.rm = TRUE),
+      progress = if_else(denominator > 0, numerator / denominator, NA_real_),
+      .groups = "drop"
+    )
+
+  p <- ggplot(df, aes(x = reorder(event_short, progress), y = progress)) +
+    geom_col() +
+    scale_y_continuous(labels = percent_format()) +
+    labs(
+      x = "Event",
+      y = "Progress",
+      title = "Progress by Event"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  ggplotly(p)
+})
+```
+
+```{r}
+renderDT({
+  summary_data() %>%
+    mutate(
+      progress = percent(progress, accuracy = 0.1)
+    ) %>%
+    datatable(
+      rownames = FALSE,
+      options = list(
+        pageLength = 15,
+        scrollX = TRUE
+      )
+    )
+})
+```
+
+```{r}
+renderDT({
+  filtered_data() %>%
+    datatable(
+      rownames = FALSE,
+      options = list(
+        pageLength = 15,
+        scrollX = TRUE
+      )
+    )
+})
+```
+
